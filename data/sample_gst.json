@@ -1,0 +1,12 @@
+{
+  "company": "Muthoot Finance Ltd",
+  "period": "FY2024",
+  "gstr3b": {
+    "total_taxable_supply_cr": 120.0,
+    "total_tax_paid_cr": 21.6
+  },
+  "gstr2a": {
+    "total_inward_supply_cr": 78.0,
+    "total_itc_available_cr": 14.04
+  }
+}

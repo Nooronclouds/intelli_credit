@@ -1,0 +1,9 @@
+date,description,credit_cr,debit_cr,balance_cr
+2024-01-05,Client payment - Alpha Trading,4.20,,18.50
+2024-01-10,Salary disbursement,,1.80,16.70
+2024-01-15,Payment to Beta Supplies,,3.50,13.20
+2024-01-30,Receipt from Beta Supplies,3.45,,16.65
+2024-02-05,Client payment - Gamma Corp,5.10,,21.75
+2024-02-28,Return payment from Alpha,,4.18,17.57
+2024-03-01,Client payment - Alpha Trading,4.20,,21.77
+2024-03-15,Payment to Beta Supplies,,3.50,18.27

@@ -45,20 +45,33 @@ def analyze_promoter_risk(company_name):
     adverse_news = False
     fraud_mention = False
 
+    ed_mention = False
+
     for item in news_items:
         headline = item["headline"].lower()
 
-        if "fraud" in headline or "scam" in headline:
+        if any(word in headline for word in ["fraud", "scam", "fir", "misappropriation"]):
             adverse_news = True
             fraud_mention = True
             item["sentiment"] = "HIGH_RISK"
+            item["risk_keywords"].append("fraud/FIR")
+
+        if any(word in headline for word in ["ed ", "enforcement", "pmla", "money laundering"]):
+            adverse_news = True
+            ed_mention = True
+            item["sentiment"] = "HIGH_RISK"
+            item["risk_keywords"].append("ED/PMLA")
+
+        if any(word in headline for word in ["penalty", "non-compliance", "violation"]):
+            item["sentiment"] = "MEDIUM_RISK"
+            item["risk_keywords"].append("regulatory action")
 
     score_impact = -8 if adverse_news else 0
 
     return {
         "adverse_news_found": adverse_news,
         "news_items": news_items,
-        "ed_mention": False,
+        "ed_mention": ed_mention,
         "fraud_mention": fraud_mention,
         "score_impact": score_impact
     }
@@ -165,4 +178,4 @@ def run_research_agent(company_name):
 
 
 if __name__ == "__main__":
-    run_research_agent("Muthooth Finance Ltd")
+    run_research_agent("Muthoot Finance Ltd")

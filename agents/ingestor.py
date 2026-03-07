@@ -206,17 +206,26 @@ def extract_text_with_ocr(pdf_path):
         return ""
 
 
-def build_rag_index(text):
-    """
-    Chunk document, embed with sentence-transformers, store in FAISS.
-    Runs on CPU to preserve GPU VRAM for Ollama.
-    """
+def build_rag_index(text, cache_dir="outputs"):
     from sentence_transformers import SentenceTransformer
     import faiss
 
-    chunk_size = 500
-    overlap = 50
-    chunks = []
+    index_path  = os.path.join(cache_dir, "faiss_index.bin")
+    chunks_path = os.path.join(cache_dir, "chunks.json")
+
+    # Load from cache if exists — instant
+    if os.path.exists(index_path) and os.path.exists(chunks_path):
+        print("  Using cached FAISS index (instant)")
+        index = faiss.read_index(index_path)
+        with open(chunks_path, 'r', encoding='utf-8') as f:
+            chunks = json.load(f)
+        model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+        return index, chunks, model
+
+    # Build fresh
+    chunk_size = 500  # characters per chunk
+    overlap    = 50   # characters of overlap between chunks
+    chunks     = []
 
     for i in range(0, len(text), chunk_size - overlap):
         chunk = text[i:i + chunk_size].strip()
@@ -225,13 +234,20 @@ def build_rag_index(text):
 
     print(f"  Built {len(chunks)} chunks from document")
 
-    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+    model      = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     embeddings = model.encode(chunks, show_progress_bar=False, batch_size=64)
     embeddings = np.array(embeddings).astype('float32')
 
     dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
+    index     = faiss.IndexFlatL2(dimension)
     index.add(embeddings)
+
+    # Save to cache
+    os.makedirs(cache_dir, exist_ok=True)
+    faiss.write_index(index, index_path)
+    with open(chunks_path, 'w', encoding='utf-8') as f:
+        json.dump(chunks, f)
+    print("  FAISS index cached for future runs")
 
     return index, chunks, model
 
@@ -555,6 +571,9 @@ def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None,
 
     if llm_output:
         company_data = llm_output.get("company", {})
+        # Deduplicate directors list
+        if "directors" in company_data:
+            company_data["directors"] = list(dict.fromkeys(company_data.get("directors", [])))
         financials = llm_output.get("financials", {})
         financials = calculate_ratios(financials)
     else:

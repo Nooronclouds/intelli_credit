@@ -1,0 +1,41 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Cached PDF extractions — large files, generated at runtime
+data/*_extracted.txt
+
+# FAISS index cache — regenerated on first run
+outputs/faiss_index.bin
+outputs/chunks.json
+
+# Word temp files
+~$*
+
+# Generated outputs — created at runtime
+outputs/financial_data.json
+outputs/research_data.json
+outputs/decision.json
+outputs/cam.docx
+
+# Environment variables — never commit secrets
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model cache
+.cache/

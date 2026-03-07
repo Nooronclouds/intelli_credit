@@ -12,4 +12,5 @@ numpy
 beautifulsoup4
 python-dotenv
 duckduckgo-search
+ddgs
 pydantic

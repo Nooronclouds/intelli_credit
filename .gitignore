@@ -38,4 +38,5 @@ desktop.ini
 .ipynb_checkpoints/
 
 # Model cache
-.cache/
+.cache/venv/ 
+data/*.pdf 

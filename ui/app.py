@@ -3,6 +3,14 @@ import sys
 import os
 import tempfile
 
+# Agents print ✓/→ glyphs; on Windows (cp1252 console) that raises
+# UnicodeEncodeError. Force UTF-8 so pipeline logging can't crash a run.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 sys.path.append('.')
 
 # ── Secrets: expose GEMINI_API_KEY to the agents (they read os.getenv) ──

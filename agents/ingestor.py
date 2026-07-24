@@ -10,7 +10,10 @@ from PIL import Image
 from dotenv import load_dotenv
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# Model is configurable so a future model retirement is a config change,
+# not a code change (gemini-1.5-flash was retired, which broke extraction).
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # force sentence-transformers to CPU
 
@@ -380,12 +383,21 @@ def ask_llm_to_extract(rag_text, company_name="Unknown", unit="millions", conver
             headers={"Content-Type": "application/json"},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0, "maxOutputTokens": 2048}
+                "generationConfig": {
+                    "temperature": 0,
+                    "maxOutputTokens": 4096,
+                    # Force guaranteed-valid JSON (no markdown, no stray commas)
+                    "responseMimeType": "application/json",
+                },
             },
             timeout=60
         )
 
         result = response.json()
+        if "candidates" not in result:
+            # Surface the real API error (bad model, quota, safety block, …)
+            print(f"  Gemini API error [{response.status_code}]: {result.get('error', result)}")
+            return None
         raw = result["candidates"][0]["content"]["parts"][0]["text"]
         print(f"  Gemini raw response: {raw[:300]}")
 

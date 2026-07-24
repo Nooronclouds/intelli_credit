@@ -2,6 +2,14 @@ import sys
 import os
 import json
 
+# Windows consoles default to cp1252, which can't encode the ✓/→ glyphs in
+# our progress logs. Force UTF-8 so the CLI doesn't crash on print().
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 sys.path.append('.')
 
 from agents.ingestor       import run_ingestor

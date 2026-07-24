@@ -279,65 +279,104 @@ def query_rag(index, chunks, model, query, top_k=4):
     return "\n---\n".join(relevant)
 
 
-def ask_llm_to_extract(rag_text, company_name="Unknown", unit="millions", conversion="divide by 10"):
-    """
-    Send RAG-retrieved chunks to Gemini for structured JSON extraction.
-    """
+# ── Default extraction schema ────────────────────────────────────────
+# The output schema is data-driven: users can add/remove/edit fields in
+# the UI, and the extraction prompt is built from whatever schema is
+# passed in. This DEFAULT_SCHEMA reproduces the original hardcoded fields
+# so behaviour is unchanged when no custom schema is supplied.
+# Each field: group ("company" | "financials"), field, type
+# ("string" | "number" | "list"), description.
+DEFAULT_SCHEMA = [
+    {"group": "company", "field": "name",              "type": "string", "description": "Registered company name"},
+    {"group": "company", "field": "cin",               "type": "string", "description": "Corporate Identity Number, e.g. L65910KL1997PLC011300"},
+    {"group": "company", "field": "pan",               "type": "string", "description": "Company PAN"},
+    {"group": "company", "field": "directors",         "type": "list",   "description": "Array of director name strings"},
+    {"group": "company", "field": "industry",          "type": "string", "description": "One word: NBFC / Banking / Manufacturing / IT etc."},
+    {"group": "company", "field": "loan_requested_cr", "type": "number", "description": "Loan amount requested, in crores"},
+    {"group": "financials", "field": "revenue_cr",                "type": "number", "description": "Total revenue / income from operations, in crores"},
+    {"group": "financials", "field": "net_profit_cr",             "type": "number", "description": "Profit after tax (PAT), in crores"},
+    {"group": "financials", "field": "total_assets_cr",           "type": "number", "description": "Total assets, in crores"},
+    {"group": "financials", "field": "total_debt_cr",             "type": "number", "description": "Total borrowings / debt, in crores"},
+    {"group": "financials", "field": "equity_cr",                 "type": "number", "description": "Shareholders' funds / net worth, in crores"},
+    {"group": "financials", "field": "ebitda_cr",                 "type": "number", "description": "EBITDA, in crores"},
+    {"group": "financials", "field": "cash_cr",                   "type": "number", "description": "Cash and cash equivalents, in crores"},
+    {"group": "financials", "field": "dscr",                      "type": "number", "description": "Debt Service Coverage Ratio (if stated)"},
+    {"group": "financials", "field": "debt_to_equity",            "type": "number", "description": "Debt-to-equity ratio (if stated)"},
+    {"group": "financials", "field": "current_ratio",             "type": "number", "description": "Current ratio (if stated)"},
+    {"group": "financials", "field": "collateral_value_cr",       "type": "number", "description": "Collateral value offered, in crores"},
+    {"group": "financials", "field": "collateral_coverage_ratio", "type": "number", "description": "Collateral coverage ratio (if stated)"},
+    {"group": "financials", "field": "year",                      "type": "string", "description": "Financial year of the statements, e.g. 2023-24"},
+]
+
+
+def _build_extraction_prompt(rag_text, schema, company_name, unit, conversion):
+    """Build the Gemini extraction prompt from a dynamic field schema."""
+    from collections import OrderedDict
+
+    groups = OrderedDict()
+    for f in schema:
+        name = str(f.get("field", "")).strip()
+        if not name:
+            continue
+        groups.setdefault(str(f.get("group", "financials")).strip() or "financials", []).append(f)
+
+    skeleton = OrderedDict()
+    guide_lines = []
+    for group, fields in groups.items():
+        skeleton[group] = OrderedDict()
+        for f in fields:
+            name  = str(f["field"]).strip()
+            ftype = str(f.get("type", "string")).strip().lower()
+            if group == "company" and name == "name":
+                default = company_name
+            elif ftype == "list":
+                default = []
+            else:
+                default = None
+            skeleton[group][name] = default
+            guide_lines.append(f"- {group}.{name} ({ftype}): {str(f.get('description', '')).strip()}")
+
+    skeleton_json = json.dumps(skeleton, indent=2)
+    guide = "\n".join(guide_lines)
     truncated_text = rag_text[:7000]
 
-    prompt = f"""You are a financial data extraction assistant for Indian banks.
-Extract key financial figures from this document and return ONLY a JSON object.
+    return f"""You are a financial data extraction assistant for Indian banks.
+Extract the requested fields from the document and return ONLY a JSON object.
 
 RULES:
-- Return ONLY valid JSON. No explanation. No markdown. No backticks.
-- CRITICAL: This document reports monetary values in {unit}
-- YOU MUST pre-calculate all conversions: {conversion}
-- Example if millions: 170990.93 → calculate 170990.93/10 = 17099.09 → write 17099.09
-- Example if lakhs: 17099.30 → calculate 17099.30/100 = 170.99 → write 170.99
-- Example if crores: 17099.09 → write 17099.09 directly
-- NEVER write math expressions in JSON — only write the final calculated number
-- Apply conversion to ALL values — revenue, profit, assets, debt, equity, cash
-- Ignore LKR values (Sri Lanka) completely — INR only
-- NEVER use commas inside numbers. Write 168770.14 not 168,770.14
-- CIN looks like L65910KL1997PLC011300 — extract exactly if found
-- directors should be a JSON array of name strings like ["Name One", "Name Two"]
-- industry should be one word: NBFC or Banking or Manufacturing etc
-- If a value is not found use null
+- Return ONLY valid JSON. No explanation, markdown, or backticks.
+- This document reports monetary values in {unit}. For every NUMBER field: {conversion}.
+- Pre-calculate conversions and write only the final number
+  (e.g. 170990.93 in millions -> 17099.09; 17099.30 in lakhs -> 170.99).
+- NEVER write math expressions or commas inside numbers (write 168770.14, not 168,770.14).
+- Ignore LKR / Sri Lanka values completely — INR only.
+- 'list' fields must be JSON arrays of strings (deduplicated).
+- CIN looks like L65910KL1997PLC011300 — extract exactly if present.
+- If a value is not found, use null (or [] for list fields).
 
-JSON structure to fill:
-{{
-  "company": {{
-    "name": "{company_name}",
-    "cin": null,
-    "pan": null,
-    "directors": [],
-    "industry": null,
-    "loan_requested_cr": null
-  }},
-  "financials": {{
-    "revenue_cr": null,
-    "net_profit_cr": null,
-    "total_assets_cr": null,
-    "total_debt_cr": null,
-    "equity_cr": null,
-    "ebitda_cr": null,
-    "cash_cr": null,
-    "dscr": null,
-    "debt_to_equity": null,
-    "current_ratio": null,
-    "collateral_value_cr": null,
-    "collateral_coverage_ratio": null,
-    "year": null
-  }}
-}}
+FIELDS TO EXTRACT:
+{guide}
+
+Return EXACTLY this JSON structure, filled in:
+{skeleton_json}
 
 Document text:
 {truncated_text}"""
 
+
+def ask_llm_to_extract(rag_text, company_name="Unknown", unit="millions", conversion="divide by 10", schema=None):
+    """
+    Send RAG-retrieved chunks to Gemini for structured JSON extraction,
+    driven by a configurable field schema (defaults to DEFAULT_SCHEMA).
+    """
+    schema = schema or DEFAULT_SCHEMA
+    prompt = _build_extraction_prompt(rag_text, schema, company_name, unit, conversion)
+
     try:
         print("  Sending to Gemini for extraction...")
+        api_key = os.getenv("GEMINI_API_KEY") or GEMINI_API_KEY
         response = requests.post(
-            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            f"{GEMINI_URL}?key={api_key}",
             headers={"Content-Type": "application/json"},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -512,7 +551,7 @@ def detect_circular_trading(csv_path):
         }
 
 
-def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None, doc_type=None):
+def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None, doc_type=None, schema=None):
     """
     MAIN FUNCTION — called by main.py orchestrator.
 
@@ -522,6 +561,7 @@ def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None,
         gst_json_path : path to GST JSON file (optional)
         bank_csv_path : path to bank statement CSV (optional)
         doc_type      : "annual_report" | "itr" | "ca_certificate" | None = auto-detect
+        schema        : list of field dicts for extraction; None = DEFAULT_SCHEMA
     """
 
     print(f"\n{'='*50}")
@@ -569,12 +609,15 @@ def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None,
         rag_text = "\n---\n".join(final_chunks[:15])
         print(f"  RAG retrieved {len(final_chunks)} unique relevant chunks")
 
-        llm_output = ask_llm_to_extract(rag_text, company_name, unit, conversion)
+        llm_output = ask_llm_to_extract(rag_text, company_name, unit, conversion, schema=schema)
 
     if llm_output:
         company_data = llm_output.get("company", {})
+        # Ensure a company name is always present for downstream stages
+        if not company_data.get("name"):
+            company_data["name"] = company_name
         # Deduplicate directors list
-        if "directors" in company_data:
+        if isinstance(company_data.get("directors"), list):
             company_data["directors"] = list(dict.fromkeys(company_data.get("directors", [])))
         financials = llm_output.get("financials", {})
         financials = calculate_ratios(financials)

@@ -16,6 +16,10 @@ except Exception:
 from dotenv import load_dotenv
 load_dotenv()
 
+import copy
+import pandas as pd
+from agents.ingestor import DEFAULT_SCHEMA
+
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Intelli-Credit",
@@ -77,6 +81,7 @@ def init_state():
     ss.setdefault("entity", {})
     ss.setdefault("loan", {})
     ss.setdefault("results", None)
+    ss.setdefault("schema", copy.deepcopy(DEFAULT_SCHEMA))
 
 
 def goto(stage, rerun=True):
@@ -219,6 +224,42 @@ def render_documents():
     with c3:
         bank_file = st.file_uploader("Bank Statement (CSV)", type=["csv"])
 
+    # ── Dynamic output schema ────────────────────────────────────────
+    st.markdown('<p class="section-header">🧩 Output Schema</p>', unsafe_allow_html=True)
+    with st.expander("Define what to extract — add, remove, or edit fields", expanded=False):
+        st.caption(
+            "The AI extracts exactly these fields into your schema. The scoring "
+            "fields (net_profit_cr, dscr, debt_to_equity, current_ratio) feed the "
+            "credit score — renaming them still extracts the value but skips that "
+            "score component."
+        )
+        schema_df = pd.DataFrame(ss.schema, columns=["group", "field", "type", "description"])
+        edited = st.data_editor(
+            schema_df,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key="schema_editor",
+            column_config={
+                "group": st.column_config.SelectboxColumn("Group", options=["company", "financials"], required=True),
+                "field": st.column_config.TextColumn("Field name", required=True),
+                "type": st.column_config.SelectboxColumn("Type", options=["string", "number", "list"], required=True),
+                "description": st.column_config.TextColumn("Description / hint", width="large"),
+            },
+        )
+        cleaned = [
+            {k: ("" if pd.isna(v) else v) for k, v in row.items()}
+            for row in edited.to_dict("records")
+        ]
+        ss.schema = [r for r in cleaned if str(r.get("field", "")).strip()]
+
+        rc = st.columns([1, 3])
+        if rc[0].button("↺ Reset to default"):
+            ss.schema = copy.deepcopy(DEFAULT_SCHEMA)
+            st.session_state.pop("schema_editor", None)
+            st.rerun()
+        rc[1].caption(f"{len(ss.schema)} field(s) defined.")
+
     nav = st.columns([1, 1, 2])
     if nav[0].button("← Back", use_container_width=True):
         ss.onboarding_step = 2
@@ -226,13 +267,13 @@ def render_documents():
     run = nav[2].button("🚀 Run Appraisal", type="primary", use_container_width=True, disabled=pdf_file is None)
 
     if run and pdf_file:
-        results = run_pipeline_ui(entity, loan, pdf_file, gst_file, bank_file)
+        results = run_pipeline_ui(entity, loan, pdf_file, gst_file, bank_file, ss.schema)
         if results:
             ss.results = results
             goto("results")
 
 
-def run_pipeline_ui(entity, loan, pdf_file, gst_file, bank_file):
+def run_pipeline_ui(entity, loan, pdf_file, gst_file, bank_file, schema=None):
     """Persist uploads to temp files and run the 4-agent pipeline with progress."""
     tmp_dir = tempfile.mkdtemp()
 
@@ -268,6 +309,7 @@ def run_pipeline_ui(entity, loan, pdf_file, gst_file, bank_file):
         financial_data = run_ingestor(
             pdf_path=pdf_path, company_name=company_name,
             gst_json_path=gst_path, bank_csv_path=bank_path,
+            schema=schema,
         )
         if not financial_data:
             s1.error("❌ Agent 1 failed — could not extract data from document.")

@@ -1,42 +1,49 @@
-# Virtual environment
+# ── Secrets ──────────────────────────────────────────────
+.env
+*.key
+
+# ── Virtual environment ──────────────────────────────────
 venv/
+.venv/
+env/
 
-# Python cache
+# ── Python cache ─────────────────────────────────────────
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
 
-# Cached PDF extractions — large files, generated at runtime
+# ── Model / embedding cache ──────────────────────────────
+.cache/
+
+# ── Generated outputs (runtime) ──────────────────────────
+outputs/*
+!outputs/.gitkeep
+
+# ── Data caches & experiments (keep only curated samples) ─
+data/*.pdf
+!data/sample_annual_report.pdf
+!data/sample_ca_certificate.pdf
+!data/sample_itr.pdf
 data/*_extracted.txt
+data/*_clean.*
+data/*.jpg
+data/*.jpeg
+data/*.png
 
-# FAISS index cache — regenerated on first run
-outputs/faiss_index.bin
-outputs/chunks.json
+# ── Build artifacts / archives ───────────────────────────
+*.zip
 
-# Word temp files
+# ── Word temp / lock files ───────────────────────────────
 ~$*
 
-# Generated outputs — created at runtime
-outputs/financial_data.json
-outputs/research_data.json
-outputs/decision.json
-outputs/cam.docx
-
-# Environment variables — never commit secrets
-.env
-
-# OS files
+# ── OS / editor cruft ────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# VS Code
 .vscode/
+.idea/
 
-# Jupyter
-.ipynb_checkpoints/
-
-# Model cache
-.cache/venv/ 
-data/*.pdf 
+# personal build helper
+make_zip.py

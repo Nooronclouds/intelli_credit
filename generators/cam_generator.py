@@ -317,7 +317,7 @@ def generate_cam(financial_data=None, research_data=None, decision_data=None):
              format_cr(gst.get("gstr2a_revenue_cr")),
              "Supplier-declared", ""],
             ["GST Mismatch",
-             f"{gst.get('mismatch_percentage', 0):.1f}%",
+             f"{gst.get('mismatch_percentage') or 0:.1f}%",
              gst_flag,
              f"{gst.get('score_impact', 0):+d} pts"],
             ["Circular Trading",

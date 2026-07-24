@@ -36,7 +36,7 @@ def search_news(company_name):
         ]
 
     return results
- 
+
 
 def analyze_promoter_risk(company_name):
 
@@ -44,7 +44,6 @@ def analyze_promoter_risk(company_name):
 
     adverse_news = False
     fraud_mention = False
-
     ed_mention = False
 
     for item in news_items:
@@ -99,23 +98,93 @@ def analyze_litigation(company_name):
     }
 
 
-def analyze_sector_risk():
+def analyze_sector_risk(industry="General"):
+    """
+    Returns sector risk based on the company's industry.
+    Industry string is extracted by Agent 1 from the document.
+    """
+    industry_lower = industry.lower()
 
-    return {
-        "sector": "NBFC",
-        "recent_rbi_actions": [
-            "RBI tightened NBFC gold loan norms Oct 2024"
-        ],
-        "sector_sentiment": "CAUTIOUS",
-        "headwinds": [
-            "Rising interest rates",
-            "Tighter RBI regulation"
-        ],
-        "tailwinds": [
-            "Growing rural credit demand"
-        ],
-        "score_impact": -8
-    }
+    if any(word in industry_lower for word in ["nbfc", "finance", "lending", "microfinance", "gold loan"]):
+        return {
+            "sector": "NBFC",
+            "recent_rbi_actions": ["RBI tightened NBFC gold loan norms Oct 2024"],
+            "sector_sentiment": "CAUTIOUS",
+            "headwinds": ["Rising interest rates", "Tighter RBI regulation"],
+            "tailwinds": ["Growing rural credit demand"],
+            "score_impact": -8
+        }
+
+    elif any(word in industry_lower for word in ["bank", "banking"]):
+        return {
+            "sector": "Banking",
+            "recent_rbi_actions": ["RBI increased risk weights on unsecured loans 2024"],
+            "sector_sentiment": "STABLE",
+            "headwinds": ["Rising NPAs in unsecured segment", "Liquidity tightening"],
+            "tailwinds": ["Credit growth momentum", "Digital banking expansion"],
+            "score_impact": -5
+        }
+
+    elif any(word in industry_lower for word in ["manufacturing", "auto", "steel", "cement", "textile", "chemical"]):
+        return {
+            "sector": "Manufacturing",
+            "recent_rbi_actions": ["PLI scheme boosting domestic manufacturing 2024"],
+            "sector_sentiment": "STABLE",
+            "headwinds": ["Raw material cost inflation", "Export demand slowdown"],
+            "tailwinds": ["PLI scheme incentives", "China+1 sourcing trend"],
+            "score_impact": -3
+        }
+
+    elif any(word in industry_lower for word in ["it", "software", "technology", "tech"]):
+        return {
+            "sector": "IT / Technology",
+            "recent_rbi_actions": ["RBI digital payment framework updated 2024"],
+            "sector_sentiment": "POSITIVE",
+            "headwinds": ["US recession fears impacting IT spends", "Visa restrictions"],
+            "tailwinds": ["AI adoption driving new deals", "Strong domestic demand"],
+            "score_impact": 0
+        }
+
+    elif any(word in industry_lower for word in ["real estate", "construction", "housing", "infra"]):
+        return {
+            "sector": "Real Estate",
+            "recent_rbi_actions": ["RBI flagged rising builder loan concentration risk 2024"],
+            "sector_sentiment": "CAUTIOUS",
+            "headwinds": ["High inventory levels", "Rising home loan rates"],
+            "tailwinds": ["Affordable housing demand", "RERA compliance improving trust"],
+            "score_impact": -8
+        }
+
+    elif any(word in industry_lower for word in ["pharma", "healthcare", "hospital", "medical"]):
+        return {
+            "sector": "Pharma / Healthcare",
+            "recent_rbi_actions": ["No specific RBI actions for pharma sector"],
+            "sector_sentiment": "POSITIVE",
+            "headwinds": ["US FDA compliance pressure", "Drug pricing regulation"],
+            "tailwinds": ["Growing domestic healthcare demand", "Export growth"],
+            "score_impact": 0
+        }
+
+    elif any(word in industry_lower for word in ["fmcg", "consumer", "retail", "food"]):
+        return {
+            "sector": "FMCG / Consumer",
+            "recent_rbi_actions": ["No specific RBI actions for FMCG sector"],
+            "sector_sentiment": "STABLE",
+            "headwinds": ["Rural demand slowdown", "Input cost pressure"],
+            "tailwinds": ["Urban consumption recovery", "Premiumisation trend"],
+            "score_impact": -3
+        }
+
+    else:
+        # Generic fallback for any unrecognised industry
+        return {
+            "sector": industry or "General",
+            "recent_rbi_actions": ["No specific regulatory actions identified"],
+            "sector_sentiment": "STABLE",
+            "headwinds": ["General macroeconomic uncertainty"],
+            "tailwinds": ["India growth story intact"],
+            "score_impact": -3
+        }
 
 
 def build_red_flags(promoter_risk, litigation_risk, sector_risk):
@@ -149,11 +218,11 @@ def build_red_flags(promoter_risk, litigation_risk, sector_risk):
     return red_flags
 
 
-def run_research_agent(company_name):
+def run_research_agent(company_name, industry="General"):
 
-    promoter_risk = analyze_promoter_risk(company_name)
+    promoter_risk   = analyze_promoter_risk(company_name)
     litigation_risk = analyze_litigation(company_name)
-    sector_risk = analyze_sector_risk()
+    sector_risk     = analyze_sector_risk(industry)
 
     red_flags = build_red_flags(
         promoter_risk,
@@ -175,7 +244,8 @@ def run_research_agent(company_name):
         json.dump(research_data, f, indent=4)
 
     print("Research agent completed. Output saved.")
+    return research_data
 
 
 if __name__ == "__main__":
-    run_research_agent("Muthoot Finance Ltd")
+    run_research_agent("Muthoot Finance Ltd", industry="NBFC")

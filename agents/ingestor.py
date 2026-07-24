@@ -7,12 +7,15 @@ import re
 import numpy as np
 from PIL import Image
 
+from dotenv import load_dotenv
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # force sentence-transformers to CPU
+
 # ── Windows: point to Tesseract installer location ──────────────────
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
-# ── Ollama config ────────────────────────────────────────────────────
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3.1:8b"
 
 # ── Output path ──────────────────────────────────────────────────────
 OUTPUT_PATH = "outputs/financial_data.json"
@@ -206,12 +209,14 @@ def extract_text_with_ocr(pdf_path):
         return ""
 
 
-def build_rag_index(text, cache_dir="outputs"):
+def build_rag_index(text, cache_dir="outputs", pdf_path=""):
     from sentence_transformers import SentenceTransformer
     import faiss
 
-    index_path  = os.path.join(cache_dir, "faiss_index.bin")
-    chunks_path = os.path.join(cache_dir, "chunks.json")
+    import hashlib
+    pdf_hash    = hashlib.md5(open(pdf_path, 'rb').read(4096)).hexdigest()[:8]
+    index_path  = os.path.join(cache_dir, f"faiss_index_{pdf_hash}.bin")
+    chunks_path = os.path.join(cache_dir, f"chunks_{pdf_hash}.json")
 
     # Load from cache if exists — instant
     if os.path.exists(index_path) and os.path.exists(chunks_path):
@@ -235,7 +240,12 @@ def build_rag_index(text, cache_dir="outputs"):
     print(f"  Built {len(chunks)} chunks from document")
 
     model      = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
-    embeddings = model.encode(chunks, show_progress_bar=False, batch_size=64)
+    embeddings = model.encode(
+        chunks,
+        show_progress_bar=True,
+        batch_size=128,
+        normalize_embeddings=True
+    )
     embeddings = np.array(embeddings).astype('float32')
 
     dimension = embeddings.shape[1]
@@ -266,7 +276,7 @@ def query_rag(index, chunks, model, query, top_k=4):
 
 def ask_llm_to_extract(rag_text, company_name="Unknown", unit="millions", conversion="divide by 10"):
     """
-    Send RAG-retrieved chunks to LLM for structured JSON extraction.
+    Send RAG-retrieved chunks to Gemini for structured JSON extraction.
     """
     truncated_text = rag_text[:7000]
 
@@ -320,45 +330,32 @@ Document text:
 {truncated_text}"""
 
     try:
-        print("  Sending to LLM for extraction...")
+        print("  Sending to Gemini for extraction...")
         response = requests.post(
-            OLLAMA_URL,
+            f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+            headers={"Content-Type": "application/json"},
             json={
-                "model": MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"num_ctx": 8192, "temperature": 0}
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 2048}
             },
-            timeout=180
+            timeout=60
         )
 
-        response_json = response.json()
-        if "response" not in response_json:
-            print(f"  Ollama error: {response_json.get('error', 'Unknown error')}")
+        result = response.json()
+        raw = result["candidates"][0]["content"]["parts"][0]["text"]
+        print(f"  Gemini raw response: {raw[:300]}")
+
+        start = raw.find('{')
+        end   = raw.rfind('}') + 1
+        if start == -1:
+            print("  Gemini didn't return valid JSON.")
             return None
 
-        raw_response = response_json["response"]
-        print(f"  LLM raw response: {raw_response[:300]}")
-
-        start = raw_response.find('{')
-        end = raw_response.rfind('}') + 1
-        if start == -1 or end == 0:
-            print("  LLM didn't return valid JSON.")
-            return None
-
-        clean_json = raw_response[start:end].replace('\n', ' ')
-
+        clean_json = raw[start:end]
         try:
             return json.loads(clean_json)
         except json.JSONDecodeError:
             clean_json = re.sub(r'(\d),(\d)', r'\1\2', clean_json)
-            def eval_division(match):
-                try:
-                    a, b = float(match.group(1)), float(match.group(2))
-                    return str(round(a / b, 2))
-                except:
-                    return match.group(0)
-            clean_json = re.sub(r'([\d.]+)\s*/\s*([\d.]+)', eval_division, clean_json)
             try:
                 return json.loads(clean_json)
             except Exception as e:
@@ -366,7 +363,7 @@ Document text:
                 return None
 
     except Exception as e:
-        print(f"  LLM extraction failed: {e}")
+        print(f"  Gemini extraction failed: {e}")
         return None
 
 
@@ -550,7 +547,7 @@ def run_ingestor(pdf_path, company_name, gst_json_path=None, bank_csv_path=None,
         queries = DOC_TYPE_QUERIES.get(doc_type, DOC_TYPE_QUERIES["annual_report"])
 
         print("  Building FAISS RAG index...")
-        rag_index, rag_chunks, rag_model = build_rag_index(raw_text)
+        rag_index, rag_chunks, rag_model = build_rag_index(raw_text, pdf_path=pdf_path)
 
         print("  Querying RAG index...")
         seen = set()

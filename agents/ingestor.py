@@ -14,8 +14,13 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # force sentence-transformers to CPU
 
-# ── Windows: point to Tesseract installer location ──────────────────
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# ── Tesseract location (cross-platform) ─────────────────────────────
+# On Windows, point at the standard installer path if present.
+# On Linux/macOS (e.g. Streamlit Cloud, where tesseract-ocr is installed
+# via packages.txt) it is already on PATH, so we leave the default.
+_WIN_TESSERACT = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+if os.path.exists(_WIN_TESSERACT):
+    pytesseract.pytesseract.tesseract_cmd = _WIN_TESSERACT
 
 # ── Output path ──────────────────────────────────────────────────────
 OUTPUT_PATH = "outputs/financial_data.json"
